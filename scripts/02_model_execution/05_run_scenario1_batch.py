@@ -39,8 +39,14 @@ def run_scenario1_batch(
     max_new_trajectories: int = 0,
     confirm_paid_run: str = "",
     analysis_tier: str = "exploratory",
+    trajectory_id_substr: str = "",
 ) -> None:
-    """Validate or resume selected match groups in one Modal app."""
+    """Validate or resume selected match groups in one Modal app.
+
+    Optional ``trajectory_id_substr`` is a comma-separated list of substrings;
+    only pending trajectories whose id contains any substring are selected.
+    Used for cheap positive-control replicates of a single cell.
+    """
 
     analysis_tier = validate_analysis_tier(analysis_tier)
     modes = [mode.strip() for mode in thinking_modes.split(",") if mode.strip()]
@@ -72,6 +78,18 @@ def run_scenario1_batch(
         else:
             completed.append((item, record))
 
+    needles = [
+        part.strip()
+        for part in trajectory_id_substr.split(",")
+        if part.strip()
+    ]
+    if needles:
+        pending = [
+            item
+            for item in pending
+            if any(needle in item["trajectory_id"] for needle in needles)
+        ]
+
     if max_new_trajectories < 0:
         raise ValueError("max_new_trajectories must be zero or greater")
     selected = pending[:max_new_trajectories] if max_new_trajectories else pending
@@ -86,6 +104,7 @@ def run_scenario1_batch(
         "completed_trajectories": len(completed),
         "pending_trajectories": len(pending),
         "legacy_existing_trajectories": legacy_existing,
+        "trajectory_id_substr": needles,
         "selected_new_trajectories": len(selected),
         "selected_model_turns": model_turns,
         "thinking_modes": modes,

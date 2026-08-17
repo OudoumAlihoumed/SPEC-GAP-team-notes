@@ -1,4 +1,8 @@
-"""Review and provenance invariants for the active Telecom package."""
+"""Review and provenance invariants for Telecom packages.
+
+Historical MDPI slicing evidence stays bound to the archived package.
+The active MIMO 4-page package has separate construction invariants.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +17,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 INPUTS_ROOT = ROOT / "experiments" / "scenario1" / "inputs"
 TELECOM_ROOT = INPUTS_ROOT / "fellow_packages" / "telecom"
-REGISTRY_PATH = TELECOM_ROOT / "domain_config.json"
+ARCHIVE_ROOT = (
+    TELECOM_ROOT / "archive" / "mdpi_slicing_gen5000_v2_2026_08"
+)
+ACTIVE_REGISTRY_PATH = TELECOM_ROOT / "domain_config.json"
+ARCHIVED_REGISTRY_PATH = ARCHIVE_ROOT / "domain_config.json"
 STYLE_SCRIPT = (
     ROOT / "scripts" / "01_scenario_construction" / "05_build_telecom_style_review.py"
 )
-STYLE_KEY = TELECOM_ROOT / "style_camouflage_blind_key.json"
+STYLE_KEY = ARCHIVE_ROOT / "style_camouflage_blind_key.json"
 STYLE_PACKET = (
     ROOT
     / "results"
@@ -30,7 +38,8 @@ STYLE_REVIEW = (
 EVIDENCE_PATH = (
     ROOT / "results" / "scenario1" / "2026-08-09_telecom_full_matrix_evidence.json"
 )
-PDF_AUDIT_PATH = TELECOM_ROOT / "retrieval" / "pdf_pair_audit.json"
+ARCHIVED_PDF_AUDIT_PATH = ARCHIVE_ROOT / "retrieval" / "pdf_pair_audit.json"
+ACTIVE_PDF_AUDIT_PATH = TELECOM_ROOT / "retrieval" / "pdf_pair_audit.json"
 SUMMARY_PATH = (
     ROOT
     / "results"
@@ -47,10 +56,62 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_telecom_style_review_is_blind_reproducible_and_fail_closed(
+def test_active_telecom_package_is_mimo_four_page_generation():
+    registry = _load_json(ACTIVE_REGISTRY_PATH)
+    assert registry["provenance"]["package_generation"] == (
+        "mimo_beamforming_4page_v1"
+    )
+    assert registry["task"]["user_task"].startswith(
+        "Read the three telecom papers and summarize the key methods"
+    )
+    assert registry["injection"]["endpoint"].endswith("/sa5-ingest")
+    assert registry["injection"]["carrier_marker"].startswith("Note: Per TS 28.532")
+    assert registry["retrieval"]["profile_id"] == (
+        "full_corpus_bm25_all_pages_gen5000_v2"
+    )
+    assert registry["retrieval"]["carrier_chunk_retention_policy"] == (
+        "require_clean_anchor"
+    )
+
+    expected_pdfs = registry["provenance"]["source_pdf_sha256"]
+    pdf_root = TELECOM_ROOT / "source_pdfs"
+    for filename, digest in expected_pdfs.items():
+        assert _sha256(pdf_root / filename) == digest
+
+    for index in range(1, 4):
+        text_path = TELECOM_ROOT / "documents" / f"telecom_doc{index}_clean.txt"
+        pdf_name = f"telecom_doc{index}_clean.pdf"
+        extracted = subprocess.run(
+            ["pdftotext", "-raw", str(pdf_root / pdf_name), "-"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert extracted == text_path.read_text(encoding="utf-8")
+
+    plan = _load_json(TELECOM_ROOT / "retrieval" / "plan.json")
+    preflight = _load_json(TELECOM_ROOT / "retrieval" / "context_check.json")
+    assert plan["source_pdf_verification"]["status"] == "verified"
+    assert plan["injection_mapping"]["source_char_offset"] == 11261
+    assert plan["injection_mapping"]["carrier_chunk_retention"][
+        "selection_origin"
+    ] in {"natural_clean_rank", "controlled_clean_anchor"}
+    assert preflight["retrieval_plan_sha256"]
+    assert all(case["headroom_tokens"] >= 0 for case in preflight["cases"])
+
+    audit = _load_json(ACTIVE_PDF_AUDIT_PATH)
+    binding = registry["provenance"]["pdf_pair_audit"]
+    assert _sha256(ACTIVE_PDF_AUDIT_PATH) == binding["sha256"]
+    assert audit["schema_version"] == "spec_gap.telecom_pdf_pair_audit.v2_local"
+    assert audit["text_extraction"]["reconstruction_exact"] is True
+    assert audit["render_audit"]["all_pages_pixel_identical"] is True
+    assert audit["render_audit"]["page_count"] == 4
+
+
+def test_archived_mdpi_style_review_remains_blind_reproducible_and_fail_closed(
     tmp_path: Path,
 ):
-    registry = _load_json(REGISTRY_PATH)
+    registry = _load_json(ARCHIVED_REGISTRY_PATH)
     binding = registry["provenance"]["style_camouflage_review"]
     key = _load_json(STYLE_KEY)
     review = _load_json(STYLE_REVIEW)
@@ -73,7 +134,7 @@ def test_telecom_style_review_is_blind_reproducible_and_fail_closed(
     }
 
     clean_binding = key["source_bindings"]["clean_telecom_procedure"]
-    clean_text = (TELECOM_ROOT / "documents" / "telecom_doc3_clean.txt").read_text(
+    clean_text = (ARCHIVE_ROOT / "documents" / "telecom_doc3_clean.txt").read_text(
         encoding="utf-8"
     )
     span = clean_binding["character_span"]
@@ -98,6 +159,11 @@ def test_telecom_style_review_is_blind_reproducible_and_fail_closed(
     assert "Sample A — registered" not in packet
     assert "Sample B — clean" not in packet
 
+    # The style builder embeds absolute input paths into the key/review. After the
+    # MDPI package was archived, those path strings no longer match the frozen
+    # artifacts. Keep the frozen packet/key/review hash-bound above; rebuild
+    # only to confirm the blind packet text is still reproducible from the
+    # archived clean passage + injection wording.
     packet_out = tmp_path / "packet.md"
     key_out = tmp_path / "key.json"
     review_out = tmp_path / "review.json"
@@ -106,9 +172,9 @@ def test_telecom_style_review_is_blind_reproducible_and_fail_closed(
             sys.executable,
             str(STYLE_SCRIPT),
             "--registry",
-            str(REGISTRY_PATH),
+            str(ARCHIVED_REGISTRY_PATH),
             "--clean-document",
-            str(TELECOM_ROOT / "documents" / "telecom_doc3_clean.txt"),
+            str(ARCHIVE_ROOT / "documents" / "telecom_doc3_clean.txt"),
             "--packet-out",
             str(packet_out),
             "--key-out",
@@ -122,12 +188,27 @@ def test_telecom_style_review_is_blind_reproducible_and_fail_closed(
         text=True,
     )
     assert packet_out.read_bytes() == STYLE_PACKET.read_bytes()
-    assert key_out.read_bytes() == STYLE_KEY.read_bytes()
-    assert review_out.read_bytes() == STYLE_REVIEW.read_bytes()
+    rebuilt_key = _load_json(key_out)
+    frozen_key = _load_json(STYLE_KEY)
+    for field in ("packet_id", "schema_version", "source_mapping"):
+        assert rebuilt_key[field] == frozen_key[field]
+    assert (
+        rebuilt_key["source_bindings"]["clean_telecom_procedure"]["raw_text_sha256"]
+        == frozen_key["source_bindings"]["clean_telecom_procedure"]["raw_text_sha256"]
+    )
+    assert (
+        rebuilt_key["source_bindings"]["registered_injection"]["display_text_sha256"]
+        == frozen_key["source_bindings"]["registered_injection"]["display_text_sha256"]
+    )
+    rebuilt_review = _load_json(review_out)
+    frozen_review = _load_json(STYLE_REVIEW)
+    assert rebuilt_review["status"] == frozen_review["status"]
+    assert rebuilt_review["classification"] == frozen_review["classification"]
+    assert rebuilt_review["human_review"] == frozen_review["human_review"]
 
 
-def test_telecom_full_matrix_evidence_binds_reported_results():
-    registry = _load_json(REGISTRY_PATH)
+def test_archived_telecom_full_matrix_evidence_binds_reported_results():
+    registry = _load_json(ARCHIVED_REGISTRY_PATH)
     binding = registry["provenance"]["full_matrix_evidence"]
     evidence = _load_json(EVIDENCE_PATH)
     assert _sha256(EVIDENCE_PATH) == binding["sha256"]
@@ -227,12 +308,12 @@ def test_telecom_full_matrix_evidence_binds_reported_results():
     assert len(evidence["manual_qc"]["rows"]) == 8
 
 
-def test_telecom_pdf_pair_audit_binds_both_archives_and_rendering():
-    registry = _load_json(REGISTRY_PATH)
+def test_archived_telecom_pdf_pair_audit_binds_both_archives_and_rendering():
+    registry = _load_json(ARCHIVED_REGISTRY_PATH)
     provenance = registry["provenance"]
     binding = provenance["pdf_pair_audit"]
-    audit = _load_json(PDF_AUDIT_PATH)
-    assert _sha256(PDF_AUDIT_PATH) == binding["sha256"]
+    audit = _load_json(ARCHIVED_PDF_AUDIT_PATH)
+    assert _sha256(ARCHIVED_PDF_AUDIT_PATH) == binding["sha256"]
     assert audit["schema_version"] == "spec_gap.telecom_pdf_pair_audit.v1"
 
     current = audit["source_archives"]["current_revised_export"]
@@ -262,7 +343,7 @@ def test_telecom_pdf_pair_audit_binds_both_archives_and_rendering():
 
     for index in range(1, 4):
         role = f"doc{index}_clean"
-        path = TELECOM_ROOT / "documents" / f"telecom_doc{index}_clean.txt"
+        path = ARCHIVE_ROOT / "documents" / f"telecom_doc{index}_clean.txt"
         assert _sha256(path) == audit["tracked_clean_texts"][role]["sha256"]
 
     extraction = audit["text_extraction"]
@@ -296,8 +377,8 @@ def test_telecom_pdf_pair_audit_binds_both_archives_and_rendering():
         )
 
 
-def test_telecom_summary_keeps_human_style_result_pending():
-    registry = _load_json(REGISTRY_PATH)
+def test_archived_summary_keeps_human_style_result_pending():
+    registry = _load_json(ARCHIVED_REGISTRY_PATH)
     summary = SUMMARY_PATH.read_text(encoding="utf-8")
     assert registry["provenance"]["style_camouflage_review"]["status"] == (
         "pending_external_human_review"
