@@ -1,6 +1,6 @@
 {
   "title": "Phase 2 \u2014 follow the work (fellow guide)",
-  "updated_at": "2026-08-17T19:57:58Z",
+  "updated_at": "2026-08-18T14:26:11Z",
   "why_this_phase": "Harder attacks failed. Soft+in-domain+tool (04) also failed. Only the original soft note showed prose adoption without tool execution. Phase 2 isolates which single change kills that adoption mode, and checks if the adoption hit is stable.",
   "factor_grid_2x2": {
     "question": "Which single change from the soft baseline removes propagated_but_not_executed: naming the tool, or rewriting in-domain, or both?",
@@ -58,14 +58,14 @@
       "id": "P2_T2_code_ablations",
       "action": "Add styles 05/06; add batch --trajectory-id-substr for cheap replicates",
       "status": "passed",
-      "completed_at": "2026-08-17T19:57:58Z"
+      "completed_at": "2026-08-18T14:26:11Z"
     },
     {
       "step": 3,
       "id": "P2_T3_build_05_06",
       "action": "Build + S03/S06/S04/S05 for 05_soft_baseline_plus_tool and 06_soft_indomain_notool",
       "status": "passed",
-      "completed_at": "2026-08-17T19:58:51Z"
+      "completed_at": "2026-08-18T14:26:21Z"
     },
     {
       "step": 4,
